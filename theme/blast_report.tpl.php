@@ -83,11 +83,17 @@ $no_hits = TRUE;
         <?php print $blast_job->blast_cmd;?></div>
     </div>
 
-<!-- TODO: only show this div if CViTjs is enabled -->
-    <!-- CViTjs image of BLAST hits, if enabled -->
-    <div class="cvitjs">
-      
-    </div>
+    <?php
+      if (isset($blast_job->blastdb->cvitjs_enabled)
+            && $blast_job->blastdb->cvitjs_enabled == '1') {
+    ?>
+      <!-- CViTjs image of BLAST hits, if enabled -->
+      <div class="cvitjs">
+        [CViTjs goes here]
+      </div>
+    <?php  
+      }
+    ?>
   </div>
   <br>
 

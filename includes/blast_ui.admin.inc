@@ -44,11 +44,11 @@ function blast_ui_admin_form($form, $form_state) {
     '#default_value' => variable_get('qRange', 0),
   );
   
-   $form['general']['Enable_webservices'] = array(
+  $form['general']['Enable_webservices'] = array(
     '#type' => 'checkbox',
     '#title' => 'Enable webservices of blast',
     '#description' => 'When checked, a blast webservices gets enabled.',
-    '#default_value' => variable_get('Enable_webservices', true),
+    '#default_value' => variable_get('Enable_webservices', false),
   );
   
   $form['file_upload'] = array(
@@ -76,6 +76,7 @@ function blast_ui_admin_form($form, $form_state) {
     '#default_value' => variable_get('blast_ui_allow_target_upload', FALSE)
   );
 
+  // EXAMPLE SEQUENCE
   $form['example_sequence'] = array(
     '#type' => 'fieldset',
     '#title' => 'Set Example Sequences',
@@ -138,6 +139,27 @@ KRSLEEGLKTTGEGLDWGVLFGFGPGLTIETVVLRSVAI';
       )
   );
 
+  // CVITJS
+  $form['cvitjs'] = array(
+    '#type' => 'fieldset',
+    '#collapsible' => true,
+    '#collapsed' => true,
+    '#title' => 'Enable and configure CViTjs',
+    '#description' => 'CViTjs enables users to see BLAST hits on an entire genome assembly.',
+  );
+
+  $form['cvitjs']['explanation'] = array(
+    '#markup' => t('CViTjs is only applicable for genome BLAST targets. After it is enabled here, CViTjs will need to be enabled for each applicable BLAST target node.'),
+  );
+
+  $form['cvitjs']['cvitjs_enable'] = array(
+    '#type' => 'checkbox',
+    '#title' => 'Enable CViTjs',
+    '#description' => 'When checked, CViTjs will be enabled.',
+    '#default_value' => variable_get('blast_ui_cvitjs_enabled', FALSE)
+  );
+
+  // SUBMIT
   $form['submit'] = array(
     '#type' => 'submit',
     '#value' => 'Save Configuration'
@@ -280,4 +302,6 @@ function blast_ui_admin_form_submit($form, $form_state) {
   }else{
     disable_web_services();
   }
+  
+  variable_set('blast_ui_cvitjs_enabled', $form_state['values']['cvitjs_enable']);
 }
