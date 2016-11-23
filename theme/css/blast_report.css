@@ -11,6 +11,27 @@ p.blast-no-results {
   font-style: italic;
 }
 
+/* CViTjs support */
+.blast-top:after {
+   clear: both;
+   display: table;
+   content: "";
+}
+
+.blast-job-info {
+  float: left;
+}
+
+.cvitjs {
+  float: right;
+}
+
+.report-table {
+  clear: both;
+  position: static;
+}
+
+
 /* -- Theme the table of results */
 table#blast_report th {
   text-align: left;
