@@ -248,3 +248,28 @@ function blast_ui_update_7103() {
   db_create_table('blastjob', $schema['blastjob']);
   
 }
+
+
+/**
+ * Add saving of blast job information for recent job list & resubmit functionality.
+ */
+function blast_ui_update_7104() {
+  db_add_field(
+    'blastdb',
+    'cvitjs_config',
+    array(
+      'description' => t('Path plus file name for CViTjs config file'),
+      'type' => 'text',
+      'default' => 0
+    )
+  );
+  db_add_field(
+    'blastdb',
+    'cvitjs_backbone',
+    array(
+      'description' => t('Path plus file name for CViTjs backbone GFF file'),
+      'type' => 'text',
+      'default' => 0
+    )
+  );
+}
