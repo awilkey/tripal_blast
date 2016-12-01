@@ -174,9 +174,9 @@ function get_blast_database_options($type) {
   $options = array();
   foreach ($nodes as $node) {
     if ( isset($node) && isset($node->db_dbtype) ) {
-	    if ( ($node->db_dbtype == $type) OR ($node->db_dbtype == $obs_type) ) {
+      if ( ($node->db_dbtype == $type) OR ($node->db_dbtype == $obs_type) ) {
         $options[$node->nid] = $node->db_name;
-	    }
+      }
     }
   }
 
@@ -201,7 +201,7 @@ function get_BLAST_job($job_id) {
 
   $blastjob = db_query('SELECT * FROM blastjob WHERE job_id=:id', array(':id' => $job_id))->fetchObject();
   $tripal_job = tripal_get_job($job_id);
-  
+
   $job = new stdClass();
   $job->job_id = $job_id;
   $job->program = $blastjob->blast_program;
@@ -209,7 +209,7 @@ function get_BLAST_job($job_id) {
   $job->date_submitted = $tripal_job->submit_date;
   $job->date_started = $tripal_job->start_time;
   $job->date_completed = $tripal_job->end_time;
-  
+
   // TARGET BLAST DATABASE.
   // If a provided blast database was used then load details.
   if ($blastjob->target_blastdb ) {
@@ -222,7 +222,7 @@ function get_BLAST_job($job_id) {
     $job->blastdb->db_path = $blastjob->target_file;
     $job->blastdb->linkout = new stdClass();
     $job->blastdb->linkout->none = TRUE;
-    
+
     if ($job->program == 'blastp' OR $job->program == 'tblastn') {
       $job->blastdb->db_dbtype = 'protein';
     }
@@ -230,7 +230,7 @@ function get_BLAST_job($job_id) {
       $job->blastdb->db_dbtype = 'nucleotide';
     }
   }
-  
+
   // FILES.
   $job->files = new stdClass();
   $job->files->query = $blastjob->query_file;
@@ -240,7 +240,8 @@ function get_BLAST_job($job_id) {
   $job->files->result->xml = $blastjob->result_filestub . '.xml';
   $job->files->result->tsv = $blastjob->result_filestub . '.tsv';
   $job->files->result->html = $blastjob->result_filestub . '.html';
-  
+  $job->files->result->gff = $blastjob->result_filestub . '.gff';
+
   return $job;
 }
 
@@ -266,6 +267,7 @@ function run_BLAST_tripal_job($program, $query, $database, $output_filestub, $op
   $output_file_xml = $output_filestub . '.xml';
   $output_file_tsv = $output_filestub . '.tsv';
   $output_file_html = $output_filestub . '.html';
+  $output_file_gff = $output_filestub . '.gff';
 
   print "\nExecuting $program\n\n";
   print "Query: $query\n";
@@ -276,29 +278,56 @@ function run_BLAST_tripal_job($program, $query, $database, $output_filestub, $op
 
   // Allow administrators to use an absolute path for these commands.
   // Defaults to using $PATH.
-	$blast_path    = variable_get('blast_path', '');
-	$blast_threads = variable_get('blast_threads', 1);
-	
-// No,don't do this in case some indication of "protein" is in the db name.
-	// Strip the extension off the BLAST target
-//	$database = preg_replace("/(.*)\.[pn]\w\w/", '$1', $database);
-	
-	// The executables:
-	$program       = $blast_path . $program;
-	$blast_formatter_command = $blast_path . 'blast_formatter';
+  $blast_path = variable_get('blast_path', '');
+  $blast_threads = variable_get('blast_threads', 1);
 
-  $blast_cmd = "$program -query '$query' -db '$database' -out '$output_file' -outfmt=11";
+  // Strip the extension off the BLAST target
+  $database = preg_replace("/(.*)\.[pn]\w\w$/", '$1', $database);
+
+  // The Blast executeable.
+  $program = $blast_path . $program;
+  if (!file_exists($program)) {
+    tripal_report_error(
+      'blast_ui',
+      TRIPAL_ERROR,
+      "Unable to find the BLAST executable (ie: /urs/bin/blastn). This can be changed in the admin settings; you supplied: @command",
+      array('@command' => $program),
+      array('print' => TRUE)
+    );
+    return FALSE;
+  }
+
+  // The blast db formatter executable.
+  $blast_formatter_command = $blast_path . 'blast_formatter';
+  if (!file_exists($blast_formatter_command)) {
+    tripal_report_error(
+      'blast_ui',
+      TRIPAL_ERROR,
+      "Unable to find the BLAST Formatter executable (ie: /urs/bin/blast_formatter). This can be changed in the admin settings; you supplied: @command",
+      array('@command' => $blast_formatter_command),
+      array('print' => TRUE)
+    );
+    return FALSE;
+  }
+
+  // Note: all variables are escaped (adds single quotes around their values) for security reasons.
+  $blast_cmd = escapeshellarg($program) . ' -query ' . escapeshellarg($query) . ' -db ' . escapeshellarg($database) . ' -out ' . escapeshellarg($output_file) . ' -outfmt=11';
   if (!empty($options)) {
     foreach ($options as $opt => $val) {
-      if ($val) {
+      $val = trim($val);
+      if (!empty($val)) {
         print "\t$opt: $val\n";
-        $blast_cmd .= " -$opt $val";
+        // We want to escape all the option values since they were supplied via
+        // user input. These values should also have been checked in the
+        // advanced form _validate functions but this adds an extra layer of
+        // protection.
+        $blast_cmd .= ' -' . escapeshellarg($opt) . ' ' . escapeshellarg($val);
       }
     }
   }
 
  // Setting the value of threads by admin page
- $blast_cmd .= " -num_threads ".$blast_threads;
+ $blast_cmd .= ' -num_threads ' . escapeshellarg($blast_threads);
 
   print "\nExecuting the following BLAST command:\n" . $blast_cmd . "\n";
 
@@ -318,8 +347,8 @@ function run_BLAST_tripal_job($program, $query, $database, $output_filestub, $op
   print "\nGenerating additional download formats...\n";
 
   print "\tXML\n";
-  $format_cmd = "$blast_formatter_command -archive $output_file -outfmt 5 -out $output_file_xml";
-  print "\nExecuting $format_cmd\n\n";
+  $format_cmd = escapeshellarg($blast_formatter_command) . ' -archive ' . escapeshellarg($output_file) . ' -outfmt 5 -out ' . escapeshellarg($output_file_xml);
+  print "\t\tExecuting $format_cmd\n\n";
   system($format_cmd);
   if (!file_exists($output_file_xml)) {
     tripal_report_error(
@@ -332,7 +361,9 @@ function run_BLAST_tripal_job($program, $query, $database, $output_filestub, $op
   }
 
   print "\tTab-delimited\n";
-  system("$blast_formatter_command -archive $output_file -outfmt 7 -out $output_file_tsv");
+  $format_cmd = escapeshellarg($blast_formatter_command) . ' -archive ' . escapeshellarg($output_file) . ' -outfmt 7 -out ' . escapeshellarg($output_file_tsv);
+  print "\t\tExecuting $format_cmd\n\n";
+  system($format_cmd);
   if (!file_exists($output_file_tsv)) {
     tripal_report_error(
       'blast_ui',
@@ -343,8 +374,23 @@ function run_BLAST_tripal_job($program, $query, $database, $output_filestub, $op
     );
   }
 
+  print "\tGFF\n";
+  convert_tsv2gff3($output_file_tsv,$output_file_gff);
+
+  if (!file_exists($output_file_gff)) {
+    tripal_report_error(
+      'blast_ui',
+      TRIPAL_WARNING,
+      "Unable to convert BLAST Tabular Output to GFF Output (%archive => %file).",
+      array('%archive' => $output_file, '%file' => $output_file_gff),
+      array('print' => TRUE)
+    );
+  }
+
   print "\tHTML (includes alignments)\n";
-  system("$blast_formatter_command -archive $output_file -outfmt 0 -out $output_file_html -html");
+  $format_cmd = escapeshellarg($blast_formatter_command) . ' -archive ' . escapeshellarg($output_file) . ' -outfmt 0 -out ' . escapeshellarg($output_file_html) . ' -html';
+  print "\t\tExecuting $format_cmd\n\n";
+  system($format_cmd);
   if (!file_exists($output_file_tsv)) {
     tripal_report_error(
       'blast_ui',
@@ -354,7 +400,6 @@ function run_BLAST_tripal_job($program, $query, $database, $output_filestub, $op
       array('print' => TRUE)
     );
   }
-
 
   print "\nDone!\n";
 }
@@ -384,7 +429,7 @@ function validate_fasta_sequence($type, $sequence) {
 
   if ($type == 'nucleotide') {
     $fastaIdRegEx = '/^>.*(\\n|\\r)/';
-    $fastaSeqRegEx = '/[^acgntuACGNTU\n\r]/';
+    $fastaSeqRegEx = '/[^ATCGNUKMBVSWDYRHatcgnukmbvswdyrh\n\r]/'; //Includes IUPAC codes.
     if ( preg_match($fastaSeqRegEx,$sequence) && !(preg_match($fastaIdRegEx,$sequence)) ) {
       return TRUE;
     } else {
@@ -392,7 +437,7 @@ function validate_fasta_sequence($type, $sequence) {
     }
   } elseif ($type == 'protein') {
     $fastaIdRegEx = '/^>.*(\\n|\\r)/';
-    $fastaSeqRegEx = '/[^acgturykmswbdhvnxACGTURYKMSWBDHVNX\*\-\n\r]/';
+    $fastaSeqRegEx = '/[^ABCDEFGHIKLMNPQRSTUVWYZXabcdefghiklmnpqrstuvwyzx\*\-\n\r]/';
     if ( preg_match($fastaSeqRegEx,$sequence) && !(preg_match($fastaIdRegEx,$sequence)) ) {
       return TRUE;
     } else {
@@ -450,19 +495,19 @@ function get_blastdb_linkout_regex($node, $options = array()) {
  *   An array of recent jobs.
  */
 function get_recent_blast_jobs($programs = array()) {
-  
+
   $filter_jobs = !empty($programs);
-  
+
   // Retrieve any recent jobs from the session variable.
   if (isset($_SESSION['blast_jobs'])) {
 
     $jobs = array();
     foreach ($_SESSION['blast_jobs'] as $job_secret) {
       $add = TRUE;
-      
+
       $job_id = blast_ui_reveal_secret($job_secret);
       $job = get_BLAST_job($job_id);
-      
+
       // @TODO: Check that the results are still available.
       // This is meant to replace the arbitrary only show jobs executed less than 48 hrs ago.
 
@@ -479,7 +524,7 @@ function get_recent_blast_jobs($programs = array()) {
       }
 
     }
-      
+
     return $jobs;
   }
   else {
@@ -493,11 +538,11 @@ function get_recent_blast_jobs($programs = array()) {
 function get_number_of_recent_jobs() {
   if (isset($_SESSION['blast_jobs'])) {
     return sizeof($_SESSION['blast_jobs']);
-  } 
+  }
   return 0;
 }
 
-/** 
+/**
  * Summarize a fasta file based on it's headers.
  *
  * @param $file
@@ -509,7 +554,7 @@ function get_number_of_recent_jobs() {
 function format_query_headers($file) {
 
   $headers = array();
-  exec('grep ">" '.$file, $headers);
+  exec('grep ">" ' . escapeshellarg($file), $headers);
 
   // Easiest case: if there is only one query header then show it.
   if (sizeof($headers) == 1 AND isset($headers[0])) {
@@ -530,8 +575,8 @@ function format_query_headers($file) {
 
 }
 
-/** 
- * Sort recent blast jobs by the date they were submitted. 
+/**
+ * Sort recent blast jobs by the date they were submitted.
  * Ascending is in order of submission.
  *
  * THIS FUNCTION SHOULD BY USED BY USORT().
@@ -540,8 +585,8 @@ function sort_blast_jobs_by_date_submitted_asc($a, $b) {
   return ($a->date_submitted - $b->date_submitted);
 }
 
-/** 
- * Sort recent blast jobs by the date they were submitted. 
+/**
+ * Sort recent blast jobs by the date they were submitted.
  * Descending is most recent first.
  *
  * THIS FUNCTION SHOULD BY USED BY USORT().
@@ -552,7 +597,7 @@ function sort_blast_jobs_by_date_submitted_desc($a, $b) {
 
 /**
  * Generate an image of HSPs for a given hit.
- *          
+ *
  * history:
  *    09/23/10  Carson  created
  *    04/16/12  eksc    adapted into POPcorn code
@@ -611,13 +656,13 @@ function generate_blast_hit_image($acc = '', $scores, $hits, $tsize, $qsize, $na
 
   // Target coordinates
   $maxlength = 300;
-  $t_length = ($tsize > $qsize) 
+  $t_length = ($tsize > $qsize)
                 ? $maxlength : $maxlength - 50;
-  $q_length = ($qsize > $tsize) 
+  $q_length = ($qsize > $tsize)
                 ? $maxlength : $maxlength - 50;
-              
+
   $tnormal = $t_length / $tsize;
-  $qnormal = $q_length / $qsize; 
+  $qnormal = $q_length / $qsize;
 
   $t_ystart = 30;
   $t_yend   = $t_ystart + 20;
@@ -659,32 +704,32 @@ function generate_blast_hit_image($acc = '', $scores, $hits, $tsize, $qsize, $na
 
   // Draw solids for HSP alignments
   for ($ii=count($b_hits)-1; $ii>=0; $ii--) {
-    // alignment 
+    // alignment
 
    $cur_hit = $b_hits[$ii];
    $cur_score = intval($b_scores[$ii]);
- 
+
    // set color according to score
    $cur_color = $darkgray;
-   if ($cur_score > 200) { 
+   if ($cur_score > 200) {
      $cur_color = $strong;
-   } 
-   else if ($cur_score > 80 && $cur_score <= 200) { 
+   }
+   else if ($cur_score > 80 && $cur_score <= 200) {
      $cur_color = $moderate;
-   } 
-   else if ($cur_score > 50 && $cur_score <= 80) { 
+   }
+   else if ($cur_score > 50 && $cur_score <= 80) {
      $cur_color = $present;
-   } 
-   else if ($cur_score > 40 && $cur_score <= 50) { 
+   }
+   else if ($cur_score > 40 && $cur_score <= 50) {
      $cur_color = $weak;
-   } 
+   }
 
    $t_start = $tnormal *  intval(strtok($cur_hit, "_")) + $t_xstart;
     $t_end = $tnormal *  intval(strtok("_")) + $t_xstart;
     $q_start = $qnormal * intval(strtok("_")) + $q_xstart;
     $q_end = $qnormal *  intval(strtok("_")) + $q_xstart;
 
-    $hit1_array = array($t_start, $t_yend, $t_end, $t_yend, $q_end, 
+    $hit1_array = array($t_start, $t_yend, $t_end, $t_yend, $q_end,
                         $q_ystart, $q_start, $q_ystart);
 
    // HSP coords
@@ -694,14 +739,14 @@ function generate_blast_hit_image($acc = '', $scores, $hits, $tsize, $qsize, $na
 
   // Draw lines over fills for HSP alignments
   for ($ii=0; $ii<count($b_hits); $ii++) {
-   // alignment 
- 
+   // alignment
+
    $cur_hit = $b_hits[$ii];
    $t_start = $tnormal *  intval(strtok($cur_hit, "_")) + $t_xstart;
     $t_end = $tnormal *  intval(strtok("_")) + $t_xstart;
     $q_start = $qnormal * intval(strtok("_")) + $q_xstart;
     $q_end = $qnormal *  intval(strtok("_")) + $q_xstart;
-   
+
    $hit1_array = array($t_start, $t_yend, $t_end, $t_yend, $q_end, $q_ystart,
                        $q_start, $q_ystart,);
 
@@ -710,26 +755,26 @@ function generate_blast_hit_image($acc = '', $scores, $hits, $tsize, $qsize, $na
    imagepolygon ($img, $hit1_array, 4, $black);
 
     // show HSP
-  
+
    imagestring($img, 3, 2, $hsp_bary, ($acc ."HSP" . ($ii + 1)), $black);
 
    $cur_score = intval($b_scores[$ii]);
- 
+
    // set color according to score
    $cur_color = $darkgray;
-   if ($cur_score > 200) { 
+   if ($cur_score > 200) {
      $cur_color = $strong;
-   } 
-   else if ($cur_score > 80 && $cur_score <= 200) { 
+   }
+   else if ($cur_score > 80 && $cur_score <= 200) {
      $cur_color = $moderate;
-   } 
-   else if ($cur_score > 50 && $cur_score <= 80) { 
+   }
+   else if ($cur_score > 50 && $cur_score <= 80) {
      $cur_color = $present;
-   } 
-   else if ($cur_score > 40 && $cur_score <= 50) { 
+   }
+   else if ($cur_score > 40 && $cur_score <= 50) {
      $cur_color = $weak;
    }
- 
+
    imagefilledrectangle($img, $q_start, $hsp_bary, $q_end, $hsp_bary+10, $cur_color);
     $hsp_bary += 15;
   }//each hit
@@ -758,7 +803,7 @@ function generate_blast_hit_image($acc = '', $scores, $hits, $tsize, $qsize, $na
   imagefilledRectangle($img, $xchart, $ychart + ($yinc * 5) + $xinc, $xchart + $yinc, $ychart + ($yinc * 6), $darkgray);
 
   // Now, we have a completed image resource and need to change it to an actual image
-  // that can be displayed. This is done using imagepng() but unfortuatly that function 
+  // that can be displayed. This is done using imagepng() but unfortuatly that function
   // either saves the image to a file or outputs it directly to the screen. Thus, we use
   // the following code to capture it and base64 encode it.
   ob_start(); // Start buffering the output
@@ -766,6 +811,152 @@ function generate_blast_hit_image($acc = '', $scores, $hits, $tsize, $qsize, $na
   $b64_img = base64_encode(ob_get_contents()); // Get what we've just outputted and base64 it
   imagedestroy($img);
   ob_end_clean();
-   
+
   return $b64_img;
+}
+
+/**
+ * Convert tsv blast output to gff output file.
+ *
+ * Created by Sofia Robb
+ * 09/15/2016
+ * counter bugfix 10/27/2016
+ *
+ * The subject (hit) will be the source feature.
+ * The query will be the target.
+ *
+ * @todo: find a more efficient way since currently the first loop stores all the blast
+ *   results into an array and then the second loop prints them.
+ *
+ * @param $blast_tsv
+ *  The name of the blast tsv output file.
+ * @param $blast_gff
+ *  The name of the blast gff output file.
+ */
+function convert_tsv2gff3($blast_tsv,$blast_gff){
+
+  // Open a new file for writting the gff.
+  $gff = fopen($blast_gff,"w");
+  fwrite($gff,"##gff-version 3\n");
+
+  // Open the TSV file to read from.
+  $tsv = fopen($blast_tsv, "r") or die("Unable to open tsv file!");
+
+  // For each line in the TSV file...
+  // Need to go thru each line of tsv to find the first and last hsp of a hit.
+  $last_s = NULL;
+  $hsp = NULL;
+  $HitResult=array();
+  
+  while(!feof($tsv)) {
+    $line = fgets($tsv);
+    $line = rtrim($line);
+
+    // Skip the line if it's empty.
+    if (preg_match('/^#/',$line) or preg_match('/^\s*$/',$line)){
+      continue;
+    }
+
+    ## for keeping track of new queries and hits
+
+    // Each line has the following parts:
+    //  0: query id,
+    //  1: subject id,
+    //  2: % identity,
+    //  3: alignment length,
+    //  4: mismatches,
+    //  5: gap opens,
+    //  6: q. start,
+    //  7: q. end,
+    //  8: s. start,
+    //  9: s. end,
+    // 10: evalue,
+    // 11: bit score
+    $parts = preg_split('/\t/', $line);
+
+    // Assign the important parts of the line to readable variables.
+    $s = $parts[1];
+    $q = $parts[0];
+    $ss = $parts[8];
+    $se = $parts[9];
+    $qs = $parts[6];
+    $qe = $parts[7];
+    $e = $parts[10];
+     
+
+    // if this is a new hit print the last and 
+    // empty the $HitResult array and
+    // reset hsp counter
+    if ($last_s != NULL and $s != $last_s ) {
+      printGFF_parent_children($gff,$HitResult);
+      $HitResult = array();
+      $hsp=0;
+    }
+  
+   // every line is a new hsp
+    $hsp++;
+  
+    // determine query strand to use in match_part line, no need to store, just print
+    $q_strand = '+';
+    if ($qs > $qe) {
+        list($qs,$qe) = array($qe,$qs);
+        $q_strand = '-';
+    }
+
+    // determine subject (hit) strand to use in match line, needs to be stored
+    $HitResult["$s,$q"]['strand']='+';
+    list($start,$end) = array($ss,$se);
+    if($ss > $se) {
+       list($start,$end) = array($se,$ss);
+       $HitResult["$s,$q"]['strand']='-';
+     }
+  
+    // store smallest start
+     if (!array_key_exists('SS',$HitResult["$s,$q"]) or $ss < $HitResult["$s,$q"]['SS']) {
+       $HitResult["$s,$q"]['SS'] = $ss;
+     }
+    
+    // store largest end
+     if (!array_key_exists('SE',$HitResult["$s,$q"]) or $se > $HitResult["$s,$q"]['SE']) {
+       $HitResult["$s,$q"]['SE'] = $se;
+     }
+
+     // store best evalue
+     if (!array_key_exists('E',$HitResult["$s,$q"]) or $e < $HitResult["$s,$q"]['E']) {
+       $HitResult["$s,$q"]['E'] = $e;
+     }   
+    
+     // generate the match_part line for each hsp
+     $HitResult["$s,$q"]['HSPs'][] = join("\t", array($s, "BLASTRESULT" , "match_part" , $start , $end , $e , $HitResult["$s,$q"]['strand'] , '.' , "ID=$s.$q.$hsp;Parent=$s.$q;Target=$q $qs $qe $q_strand"));
+     $last_s = $s;
+  } // end tsv file while
+
+  // print hit and hsp for the last hit
+  printGFF_parent_children($gff,$HitResult);
+
+  // Close the files.
+  fclose($tsv);
+  fclose($gff);
+}
+
+/**
+ *   printGFF_parent_children
+ *   prints the GFF parent feature and all of its children features
+ *
+ *
+ *  @param $blast_feature_array
+ *  an array of the all the child features which is used to generate the smallest and largest coordinates for the parent
+ *
+ *
+ */
+
+function printGFF_parent_children ($gff,$blast_feature_array){
+  foreach ($blast_feature_array as $sq => $value ) {
+    list ($s,$q) = preg_split('/,/' , $sq);
+    $evalue =  $blast_feature_array["$s,$q"]['E'];
+    $parent =  join ("\t", array($s, "BLASTRESULT" , "match" , $blast_feature_array["$s,$q"]['SS'] , $blast_feature_array["$s,$q"]['SE'] , $blast_feature_array["$s,$q"]['E'] , $blast_feature_array["$s,$q"]['strand'] , '.' , "ID=$s.$q;Name=$q($evalue)")) . "\n";
+    $child = join ("\n",$blast_feature_array["$s,$q"]['HSPs']) . "\n";
+    fwrite($gff,$parent);
+    fwrite($gff,$child);
+  }
 }

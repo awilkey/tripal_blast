@@ -21,14 +21,14 @@ function blast_ui_admin_form($form, $form_state) {
     '#description' => t('You can ignore if your $PATH variable is set. Otherwise, enter the absoulte path to bin folder. For example, /opt/blast/2.2.29+/bin/'),
     '#default_value' => variable_get('blast_path', ''),
   );
-  
-	$form['general']['blast_threads']= array(
+
+  $form['general']['blast_threads']= array(
     '#type' => 'textfield',
     '#title' => t('Enter the number of CPU threads to use in blast search.'),
     '#description' => t('You can increase the number to reduce the search time. Before you increase, please check your hardware configurations . A value of one(1) can result in a slower search for some programs eg. tblastn.'),
     '#default_value' => variable_get('blast_threads', 1),
   );
-  
+
    $form['general']['eVal']= array(
     '#type' => 'textfield',
     '#title' => t('Default e-value (Expected Threshold)'),
@@ -36,21 +36,14 @@ function blast_ui_admin_form($form, $form_state) {
      '#default_value' => variable_get('eVal', 0.001),
     //'#default_value' => variable_get('blast_threads', 1),
   );
-  
+
   $form['general']['qRange']= array(
     '#type' => 'textfield',
     '#title' => t('Default max matches in a query range'),
     '#description' => t('Limit the number of matches to a query range. This option is useful if many strong matches to one part of a query may prevent BLAST from presenting weaker matches to another part of the query.'),
     '#default_value' => variable_get('qRange', 0),
   );
-  
-  $form['general']['enable_blast_webservices'] = array(
-    '#type' => 'checkbox',
-    '#title' => 'Enable web services',
-    '#description' => 'When checked, BLAST web services are enabled. Requires the Drupal Services module. See help tab for more information.',
-    '#default_value' => variable_get('enable_blast_webservices', false),
-  );
-    
+
   $form['file_upload'] = array(
     '#type' => 'fieldset',
     '#title' => 'Allow File Upload',
@@ -59,7 +52,7 @@ function blast_ui_admin_form($form, $form_state) {
       them to more conviently BLAST large sets of sequences. However, the size of the
       files could be problematic, storage-wise, on your server.<br />'
   );
-  
+
   $form['file_upload']['query_upload'] = array(
     '#type' => 'checkbox',
     '#title' => 'Enable Query Sequence Upload',
@@ -172,16 +165,16 @@ KRSLEEGLKTTGEGLDWGVLFGFGPGLTIETVVLRSVAI';
  * Validate the Admin/Settings form.
  */
 function blast_ui_admin_form_validate($form, &$form_state) {
-	$blast_path = $form_state['values']['blast_path'];
-	$blast_path .= 'blastn';
-	if(!empty($blast_path)) {
-		if(file_exists($blast_path) ) {
-			variable_set('blast_path', $form_state['values']['blast_path']);
-		}
-		else {
-			form_set_error('blast_path', t('Please enter a valid path or you can leave it blank'));
-		}
-	}
+  $blast_path = $form_state['values']['blast_path'];
+  $blast_path .= 'blastn';
+  if(!empty($form_state['values']['blast_path'])) {
+    if(file_exists($blast_path) ) {
+      variable_set('blast_path', $form_state['values']['blast_path']);
+    }
+    else {
+      form_set_error('blast_path', t('Please enter a valid path not including the name of the blast program (ie: /urs/bin/). You can leave this blank if you have your $PATH variable set appropriately.'));
+    }
+  }
 
 }
 
@@ -285,23 +278,13 @@ function blast_ui_admin_form_submit($form, $form_state) {
 
   variable_set('blast_path', $form_state['values']['blast_path']);
   variable_set('blast_threads', $form_state['values']['blast_threads']);
-  
+
   variable_set('eVal', $form_state['values']['eVal']);
   variable_set('qRange', $form_state['values']['qRange']);
-  
-  // Logic to enable web services on single click
-  variable_set('enable_blast_webservices', $form_state['values']['enable_blast_webservices']);
-  variable_set('blast_ui_allow_query_upload', $form_state['values']['query_upload']);	
+
+  variable_set('blast_ui_allow_query_upload', $form_state['values']['query_upload']);
   variable_set('blast_ui_allow_target_upload', $form_state['values']['target_upload']);
-  
+
   variable_set('blast_ui_nucleotide_example_sequence', $form_state['values']['nucleotide_example']);
   variable_set('blast_ui_protein_example_sequence', $form_state['values']['protein_example']);
-  
-  if($form_state['values']['enable_blast_webservices'] == 1){
-  	enable_web_services();
-  }else{
-    disable_web_services();
-  }
-  
-  variable_set('blast_ui_cvitjs_enabled', $form_state['values']['cvitjs_enable']);
 }

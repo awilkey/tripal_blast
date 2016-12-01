@@ -8,7 +8,7 @@ $linkout = FALSE;
 if ($blast_job->blastdb->linkout->none === FALSE) {
   $linkout_type  = $blast_job->blastdb->linkout->type;
   $linkout_regex = $blast_job->blastdb->linkout->regex;
-  
+
   // Note that URL prefix is not required if linkout type is 'custom'
   if (isset($blast_job->blastdb->linkout->db_id->urlprefix) && !empty($blast_job->blastdb->linkout->db_id->urlprefix)) {
     $linkout_urlprefix = $blast_job->blastdb->linkout->db_id->urlprefix;
@@ -82,6 +82,9 @@ $no_hits = TRUE;
       <div class="blast-cmd-info"><strong>BLAST Command executed</strong>: 
         <?php print $blast_job->blast_cmd;?></div>
     </div>
+    
+    <br />
+    <div class="num-results"><strong>Number of Results</strong>: <?php print $num_results; ?></div>
 
     <?php
       if (isset($blast_job->blastdb->cvitjs_enabled)
@@ -309,19 +312,22 @@ $no_hits = TRUE;
         }
       }//handle no hits
     }//XML exists
+  }//handle no hits
+}//XML exists
+elseif ($too_many_results) {
+  print '<div class="messages error">Your BLAST resulted in '. number_format(floatval($num_results)) .' results which is too many to reasonably display. We have provided the result files for Download at the top of this page; however, we suggest you re-submit your query using a more stringent e-value (i.e. a smaller number).</div>';
+}
+else {
+  drupal_set_title('BLAST: Error Encountered');
+  print '<div class="messages error">We encountered an error and are unable to load your BLAST results.</div>';
+}
+?>
 
-    else {
-      drupal_set_title('BLAST: Error Encountered');
-      print '<p class="blast-no-results">We encountered an error and are unable to load your BLAST results.</p>';
-    }
-    ?>
-
-    <p><?php print l(
-      'Edit this query and re-submit', 
-      $blast_form_url,
-      array('query' => array('resubmit' => blast_ui_make_secret($job_id))));
-    ?></p>
-  </div> <!--report-table-->
-</div> <!--blast-report-->
+<p><?php print l(
+  'Edit this query and re-submit',
+  $blast_form_url,
+  array('query' => array('resubmit' => blast_ui_make_secret($job_id))));
+?></p>
+</div>
 
 <?php print theme('blast_recent_jobs', array()); ?>
